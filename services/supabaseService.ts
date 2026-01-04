@@ -15,7 +15,7 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKe
 // 🔐 인증 함수들
 // ═══════════════════════════════════════════════════════════
 
-const ADMIN_EMAIL = 'admin@wpplease.app';
+const ADMIN_EMAIL = 'admin@wp-please.local';
 
 /**
  * 비밀번호로 로그인 (회원가입 자동 처리)
@@ -190,4 +190,5 @@ export async function updateBotStatus(userId: string, status: {
         console.error('상태 업데이트 실패:', e);
     }
 }
+
 
