@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { GeneratedPost, AuditResult, WordPressConfig } from "../types";
 import { renderThumbnailToBase64 } from "./thumbnailRenderer";
+import { apiRateLimiter } from "../utils/rateLimiter";
 
 /**
  * 10가지 프리미엄 컬러 템플릿
@@ -305,77 +306,58 @@ const getSystemInstruction = (customInstruction: string, template: typeof TEMPLA
   
   📌 핵심 원칙: 독자가 클릭하면 실제 정보에 도달해야 함!
   
-  ✅ 주제별 실제 목표 URL 예시 (이렇게 구체적으로!):
+  🎯 잡블로그 필수 규칙:
+  ⚠️ 글 주제를 먼저 분석한 후, 맥락에 맞는 사이트만 연결!
   
-  [금융/정책 관련]:
-  - 청년도약계좌 → https://www.kinfa.or.kr (서민금융진흥원)
-  - 청년희망적금 → https://www.kinfa.or.kr
-  - 소상공인 지원 → https://www.semas.or.kr/web/main/index.kmdc
-  - 고용 지원금 → https://www.moel.go.kr
-  - 세금 관련 → https://www.nts.go.kr
-  - 복지 혜택 → https://www.bokjiro.go.kr
-  - 금융 민원 → https://www.fss.or.kr
+  예시:
+  - 건강/의료 글 → 질병관리청, 응급의료포털, 건강보험
+  - 금융/세금 글 → 국세청, 고용보험, 은행 홈페이지
+  - 쇼핑/상품 글 → 쿠팡, 올리브영, 네이버쇼핑
+  - 정부정책 글 → 정부24, 관련 부처 (.go.kr)
   
-  [은행별 상품]:
-  - KB국민은행 → https://www.kbstar.com
-  - 신한은행 → https://www.shinhan.com
-  - 하나은행 → https://www.hanabank.com
-  - 우리은행 → https://www.wooribank.com
-  - 카카오뱅크 → https://www.kakaobank.com
-  - 토스뱅크 → https://www.tossbank.com
+  ❌ 맥락 안 맞는 링크 = 신뢰도 하락!
   
-  [건강/의료]:
-  - 건강보험 → https://www.nhis.or.kr
-  - 의료 정보 → https://www.health.kr
-  - 질병관리청 → https://www.kdca.go.kr
+  🔍 링크 URL 선택 우선순위 (반드시 이 순서대로!):
   
-  [생활/행정]:
-  - 정부24 → https://www.gov.kr
-  - 법률 정보 → https://www.law.go.kr
-  - 주민센터 업무 → https://www.gov.kr
-  - 주택 정보 → https://www.myhome.go.kr
-  - 부동산 → https://www.reb.or.kr
+  1️⃣ **도메인 추론** - 공식 사이트 URL 만들기
+     - 정부기관: www.기관명.go.kr (예: 국세청 → hometax.go.kr, 질병관리청 → kdca.go.kr)
+     - 공공기관: www.기관명.or.kr (예: 응급의료 → e-gen.or.kr, 고용보험 → ei.go.kr)
+     - 대기업/브랜드: www.회사명.com 또는 .co.kr
+     - 은행: kbstar.com, shinhan.com, kakaobank.com 등
+     - 쇼핑: coupang.com, oliveyoung.co.kr, shopping.naver.com 등
   
-  [취업/교육]:
-  - 취업 지원 → https://www.work.go.kr
-  - 직업훈련 → https://www.hrd.go.kr
-  - 국민내일배움카드 → https://www.hrd.go.kr
+  2️⃣ **정말 추론 불가능할 때만** → 구글 검색 (https://www.google.com/search?q=키워드)
   
-  [기타]:
-  - 위키백과 → https://ko.wikipedia.org/wiki/주제명
-  - 네이버 뉴스 → https://news.naver.com
+  ✅ 허용 사이트:
+  - 정부/공공기관 (.go.kr, .or.kr)
+  - 대기업 공식 홈페이지
+  - 교육 플랫폼 (coursera.org, youtube.com)
+  - 포털 (naver.com, daum.net)
+  - 나무위키 (나무위키는 사용 가능)
   
-  🚨 구글 검색은 최후의 수단! (위 목록에 없을 때만):
-  - 형식: https://www.google.com/search?q=구체적+키워드
-  - 예: https://www.google.com/search?q=2026년+청년+전세자금대출+조건
-  
-  🚨 절대 사용 금지:
+  ❌ 절대 사용 금지:
   - href="#" ← 절대 금지!
   - href="https://example.com" ← 절대 금지!
-  - 나무위키, 개인 블로그, 브런치 ← 금지!
+  - 개인 블로그 (blog.naver.com, tistory.com), 브런치 ← 금지!
   
   📌 링크 텍스트 작성법:
   
   ✅ 좋은 예:
-  - "<a href="https://www.kinfa.or.kr">서민금융진흥원 공식 사이트</a>에서 신청할 수 있어요"
-  - "<a href="https://www.nhis.or.kr">국민건강보험공단</a>에서 확인해보세요"
-  - "<a href="https://www.work.go.kr">워크넷</a>에서 채용정보를 찾아보세요"
+  - "<a href="https://www.kdca.go.kr">질병관리청</a>에서 확인하세요"
+  - "<a href="https://www.e-gen.or.kr">응급의료포털</a>에서 병원 찾기"
   
   ❌ 나쁜 예:
-  - "내국위키에서 확인하기" (존재하지 않는 사이트)
-  - "정책위키 참고" (존재하지 않는 사이트)
   - "여기를 클릭하세요" (링크가 뭔지 모름)
-  - "자세한 정보 보기" (어디로 가는지 불명확)
   
   📌 최소 개수: 전체 글에 5개 이상
   
   📌 링크 스타일 (새 창 열기 금지! 애드센스 전면광고 위해):
   <a href="실제URL" style="color:${template.h3Color} !important; font-weight:700 !important; text-decoration:underline !important; text-underline-offset:4px !important;">명확한 링크텍스트</a>
+  
   ⚠️ 핵심: 
-  - 링크는 반드시 실존하는 공식 사이트만!
+  - 구글 검색은 최후의 수단! 먼저 도메인 추론 시도!
+  - 링크는 반드시 실존하는 공식 사이트!
   - 링크 텍스트는 목적지가 명확하게!
-  - 적절한 링크 모르면 구글 검색 페이지!
-  - 존재하지 않는 사이트 이름 절대 금지!
 
   ══════════════════════════════════════════════════════════════════
   🔴 [6. CTA 버튼 - 글 맥락 분석 후 생성!]
@@ -419,11 +401,22 @@ const getSystemInstruction = (customInstruction: string, template: typeof TEMPLA
   1. CTA 버튼 3개 모두 서로 다른 트리거 유형 사용!
   2. 글 주제와 맥락에 맞는 동사/명사 사용!
   3. 아래 예시는 참고용! 그대로 쓰지 말고 주제에 맞게 새로 작성!
+  4. 실용적이고 구체적인 행동 유도! (예: "확인", "조회", "연결", "계산")
   
   📌 예시 (주제: "청년도약계좌"):
   - CTA1: "💰 내 예상 이자 계산해보기" (호기심)
   - CTA2: "📢 이미 50만명이 가입했어요" (사회적 증거)  
   - CTA3: "🔥 마감 전에 꼭 신청하세요" (긴급성)
+  
+  📌 예시 (주제: "올리브영 고객센터"):
+  - CTA1: "📞 상담원 즉시 연결하기" (긴급성)
+  - CTA2: "⚡ 전화번호 1초 확인" (호기심)
+  - CTA3: "🎯 올리브영 공식 사이트 바로가기" (행동 유도)
+  
+  📌 예시 (주제: "고용보험 환급금"):
+  - CTA1: "💰 내 환급금 조회하기" (호기심)
+  - CTA2: "🏛️ 고용보험 공식 사이트 확인" (신뢰성)
+  - CTA3: "⏰ 놓치면 환급 못 받아요" (손실 회피)
   
   📌 예시 (주제: "다이어트 식단표"):
   - CTA1: "📊 나에게 맞는 칼로리 확인하기" (호기심)
@@ -435,18 +428,30 @@ const getSystemInstruction = (customInstruction: string, template: typeof TEMPLA
   - CTA2: "✈️ 인기 코스 TOP5 보기" (사회적 증거)
   - CTA3: "🎯 여행 체크리스트 확인하기" (호기심)
   
-  📌 예시 (주제: "피부관리 루틴"):
-  - CTA1: "✨ 내 피부타입 알아보기" (호기심)
-  - CTA2: "🧴 피부과 의사가 추천하는 ~" (사회적 증거)
-  - CTA3: "💎 모르면 손해보는 관리법" (손실 회피)
+  📌 CTA 버튼 URL 규칙 (중요!):
+  
+  ⚠️ CTA 버튼도 반드시 실제 URL로 연결!
+  
+  [주제별 CTA 버튼 URL]:
+  - 금융/지원금 → 공식 기관 사이트 (예: https://www.kinfa.or.kr, 은행 홈페이지)
+  - 쇼핑/상품 → 쿠팡, 네이버쇼핑 등 (예: https://www.coupang.com, https://shopping.naver.com)
+  - 정부 정책 → 정부24, 관련 부처 (예: https://www.gov.kr)
+  - 일반 주제 → 도메인 추론 또는 구글 검색
+  
+  🔍 CTA URL 선택 우선순위:
+  1. 허용 목록에 있는 공식 사이트
+  2. 도메인 추론 (예: "삼성전자" → https://www.samsung.com/kr)
+  3. 구글 검색 (예: https://www.google.com/search?q=청년도약계좌)
+  
+  ❌ javascript:void(0) 절대 금지! 반드시 실제 URL 사용!
   
   📌 CTA 버튼 스타일:
   
   [일반 CTA] (첫 번째 H2 후, 두 번째 H2 후):
-  <a href="javascript:void(0)" style="display:block !important; text-align:center !important; padding:22px 44px !important; background:${template.ctaGradient} !important; color:${template.ctaTextColor} !important; text-decoration:none !important; border-radius:18px !important; font-weight:900 !important; font-size:20px !important; box-shadow:0 12px 30px rgba(0,0,0,0.25), inset 0 -3px 0 rgba(0,0,0,0.1) !important; margin:35px auto !important; max-width:480px !important; letter-spacing:-0.3px !important; text-shadow:none !important;">[이모지] [주제에 맞는 CTA 문구]</a>
+  <a href="실제URL" style="display:block !important; text-align:center !important; padding:22px 44px !important; background:${template.ctaGradient} !important; color:${template.ctaTextColor} !important; text-decoration:none !important; border-radius:18px !important; font-weight:900 !important; font-size:20px !important; box-shadow:0 12px 30px rgba(0,0,0,0.25), inset 0 -3px 0 rgba(0,0,0,0.1) !important; margin:35px auto !important; max-width:480px !important; letter-spacing:-0.3px !important; text-shadow:none !important;">[이모지] [주제에 맞는 CTA 문구]</a>
   
   [라스트팡 CTA] (마무리 섹션 - 반드시 작성!):
-  <a href="javascript:void(0)" style="display:block !important; text-align:center !important; padding:26px 52px !important; background:${template.ctaGradient} !important; color:${template.ctaTextColor} !important; text-decoration:none !important; border-radius:22px !important; font-weight:900 !important; font-size:24px !important; box-shadow:0 18px 45px rgba(0,0,0,0.3), 0 8px 20px rgba(0,0,0,0.15), inset 0 -4px 0 rgba(0,0,0,0.12) !important; margin:45px auto 25px !important; max-width:520px !important; letter-spacing:-0.5px !important; text-shadow:none !important; border:3px solid rgba(255,255,255,0.3) !important;">🔥 [주제에 맞는 강력한 CTA 문구]</a>
+  <a href="실제URL" style="display:block !important; text-align:center !important; padding:26px 52px !important; background:${template.ctaGradient} !important; color:${template.ctaTextColor} !important; text-decoration:none !important; border-radius:22px !important; font-weight:900 !important; font-size:24px !important; box-shadow:0 18px 45px rgba(0,0,0,0.3), 0 8px 20px rgba(0,0,0,0.15), inset 0 -4px 0 rgba(0,0,0,0.12) !important; margin:45px auto 25px !important; max-width:520px !important; letter-spacing:-0.5px !important; text-shadow:none !important; border:3px solid rgba(255,255,255,0.3) !important;">🔥 [주제에 맞는 강력한 CTA 문구]</a>
   
   ⚠️ 다시 한번 강조: 3개 CTA 버튼 모두 다른 문구 사용! 복붙 금지!
 
@@ -619,7 +624,8 @@ export const generateSEOContent = async (
   const apiKeys = config.apiKeys || [];
   keyManager.setKeys(apiKeys, config.currentKeyIndex || 0, onKeyIndexChange);
 
-  const maxRetries = Math.max(1, keyManager.getKeyCount());
+  // 🛡️ 안전 장치: 최대 3회만 재시도 (계정 정지 방지)
+  const maxRetries = Math.min(3, Math.max(1, keyManager.getKeyCount()));
   let lastError = new Error('알 수 없는 오류');
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -628,7 +634,17 @@ export const generateSEOContent = async (
       throw new Error("API 키가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.");
     }
 
+    // 🛡️ Rate Limiting: API 호출 전 제한 확인
+    if (!apiRateLimiter.canMakeCall()) {
+      const waitTime = apiRateLimiter.getWaitTime();
+      console.warn(`⚠️ Rate limit 초과! ${Math.ceil(waitTime / 1000)}초 후 재시도...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
     try {
+      // 📊 API 호출 기록
+      apiRateLimiter.recordCall();
+
       const ai = new GoogleGenAI({ apiKey: currentKey });
 
       const response = await ai.models.generateContent({
@@ -774,6 +790,12 @@ export const generateSEOContent = async (
           throw new Error(`모든 API 키(${keyManager.getKeyCount()}개)에 문제가 있습니다. 새 API 키를 추가해주세요.`);
         }
         console.log(`✅ API 키 #${keyManager.getCurrentIndex() + 1}로 전환 완료!`);
+
+        // 🛡️ 지수 백오프: 재시도 간 대기 시간 증가 (1초, 2초, 4초)
+        const backoffDelay = Math.pow(2, attempt) * 1000;
+        console.log(`⏱️ ${backoffDelay}ms 대기 후 재시도...`);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+
         continue;
       }
 
