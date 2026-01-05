@@ -554,6 +554,25 @@ const App: React.FC = () => {
       const result = await processQueueItem(i, config, items);
       if (result === 'success') successCount++;
       else failCount++;
+
+      // 🛡️ 안전 장치: 각 글 생성 사이에 설정한 간격만큼 대기
+      // (마지막 글은 대기 불필요)
+      if (i < items.length - 1) {
+        const delayMs = scheduleConfig.interval * 60 * 1000; // 분 → 밀리초
+        const delayMinutes = scheduleConfig.interval;
+
+        console.log(`⏱️ 다음 글 생성까지 ${delayMinutes}분 대기... (API 안전 모드)`);
+
+        // 설정 시간만큼 대기하되, 일시정지 체크
+        const startWait = Date.now();
+        while (Date.now() - startWait < delayMs) {
+          // 일시정지되면 대기도 멈춤
+          while (isPausedRef.current) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1초씩 체크
+        }
+      }
     }
 
     // 텔레그램 배치 완료 알림
